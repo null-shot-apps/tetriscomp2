@@ -43,7 +43,7 @@ export default function TetrisGame() {
   const [currentPiece, setCurrentPiece] = useState<Piece | null>(null);
   const [score, setScore] = useState(0);
   const [gameOver, setGameOver] = useState(false);
-  const [isPaused, setIsPaused] = useState(false);
+
   const [gameStarted, setGameStarted] = useState(false);
 
   const createPiece = useCallback((): Piece => {
@@ -111,7 +111,7 @@ export default function TetrisGame() {
   }, []);
 
   const movePiece = useCallback((dx: number, dy: number) => {
-    if (!currentPiece || gameOver || isPaused) return;
+    if (!currentPiece || gameOver) return;
     
     if (!checkCollision(currentPiece, dx, dy)) {
       setCurrentPiece({ ...currentPiece, x: currentPiece.x + dx, y: currentPiece.y + dy });
@@ -131,7 +131,7 @@ export default function TetrisGame() {
   }, [currentPiece, gameOver, isPaused, checkCollision, mergePiece, clearLines, createPiece]);
 
   const rotatePiece = useCallback(() => {
-    if (!currentPiece || gameOver || isPaused) return;
+    if (!currentPiece || gameOver) return;
     
     const rotated = currentPiece.shape[0].map((_, i) =>
       currentPiece.shape.map(row => row[i]).reverse()
@@ -144,7 +144,7 @@ export default function TetrisGame() {
   }, [currentPiece, gameOver, isPaused, checkCollision]);
 
   const dropPiece = useCallback(() => {
-    if (!currentPiece || gameOver || isPaused) return;
+    if (!currentPiece || gameOver) return;
     
     let newY = currentPiece.y;
     while (!checkCollision(currentPiece, 0, newY - currentPiece.y + 1)) {
@@ -170,7 +170,6 @@ export default function TetrisGame() {
     setCurrentPiece(createPiece());
     setScore(0);
     setGameOver(false);
-    setIsPaused(false);
     setGameStarted(true);
   }, [createPiece]);
 
@@ -199,11 +198,7 @@ export default function TetrisGame() {
           e.preventDefault();
           dropPiece();
           break;
-        case 'p':
-        case 'P':
-          e.preventDefault();
-          setIsPaused(prev => !prev);
-          break;
+
       }
     };
 
@@ -212,14 +207,14 @@ export default function TetrisGame() {
   }, [gameStarted, movePiece, rotatePiece, dropPiece]);
 
   useEffect(() => {
-    if (!gameStarted || gameOver || isPaused || !currentPiece) return;
+    if (!gameStarted || gameOver || !currentPiece) return;
     
     const interval = setInterval(() => {
       movePiece(0, 1);
     }, 500);
     
     return () => clearInterval(interval);
-  }, [gameStarted, gameOver, isPaused, currentPiece, movePiece]);
+  }, [gameStarted, gameOver, currentPiece, movePiece]);
 
   const renderBoard = () => {
     const displayBoard = board.map(row => [...row]);
@@ -276,7 +271,7 @@ export default function TetrisGame() {
               )}
             </div>
             
-            {(gameOver || !gameStarted || isPaused) && (
+            {(gameOver || !gameStarted) && (
               <div className="absolute inset-0 bg-black/70 flex items-center justify-center rounded-lg">
                 <div className="text-center">
                   {gameOver && (
@@ -285,9 +280,7 @@ export default function TetrisGame() {
                       <p className="text-2xl text-white mb-6">Score: {score}</p>
                     </>
                   )}
-                  {isPaused && !gameOver && (
-                    <h2 className="text-4xl font-bold text-white mb-4">Paused</h2>
-                  )}
+
                   {!gameStarted && (
                     <h2 className="text-3xl font-bold text-white mb-4">Press Start to Play</h2>
                   )}
@@ -316,22 +309,15 @@ export default function TetrisGame() {
                 <p><span className="font-bold">↑</span> Rotate</p>
                 <p><span className="font-bold">↓</span> Soft Drop</p>
                 <p><span className="font-bold">Space</span> Hard Drop</p>
-                <p><span className="font-bold">P</span> Pause</p>
+
               </div>
             </div>
-            
-            {gameStarted && !gameOver && (
-              <button
-                onClick={() => setIsPaused(prev => !prev)}
-                className="w-full px-6 py-3 bg-yellow-600 hover:bg-yellow-700 text-white font-bold rounded-lg transition-colors"
-              >
-                {isPaused ? 'Resume' : 'Pause'}
-              </button>
-            )}
+
           </div>
         </div>
       </div>
     </div>
   );
 }
+
 
