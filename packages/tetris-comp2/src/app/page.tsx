@@ -1,84 +1,337 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 
-const slogans = [
-  "Turn chats into apps",
-  "Prompt. Ship. Repeat.",
-  "Build anything from a chat",
-  "Ideas → Apps, instantly",
-  "From zero to MVP in minutes",
-  "Your cofounder in the command line",
-  "Draft, iterate, deploy",
-  "Ship faster than you can type",
-  "Design in text, deliver in code",
-  "Dream it. Prompt it. Run it.",
-  "Chat-native app building",
-  "From prompt to product",
-  "One prompt, infinite apps",
-  "Stop scaffolding. Start shipping.",
-  "Prototype at the speed of thought",
-  "Make conversations executable"
-];
+// Tetris piece shapes
+const SHAPES = {
+  I: [[1, 1, 1, 1]],
+  O: [[1, 1], [1, 1]],
+  T: [[0, 1, 0], [1, 1, 1]],
+  S: [[0, 1, 1], [1, 1, 0]],
+  Z: [[1, 1, 0], [0, 1, 1]],
+  J: [[1, 0, 0], [1, 1, 1]],
+  L: [[0, 0, 1], [1, 1, 1]]
+};
 
-export default function Landing() {
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [isVisible, setIsVisible] = useState(true);
+const COLORS = {
+  I: '#00f0f0',
+  O: '#f0f000',
+  T: '#a000f0',
+  S: '#00f000',
+  Z: '#f00000',
+  J: '#0000f0',
+  L: '#f0a000'
+};
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setIsVisible(false);
-      setTimeout(() => {
-        setCurrentIndex((prev) => (prev + 1) % slogans.length);
-        setIsVisible(true);
-      }, 400);
-    }, 2800);
+const BOARD_WIDTH = 10;
+const BOARD_HEIGHT = 20;
 
-    return () => clearInterval(interval);
+type ShapeType = keyof typeof SHAPES;
+type Board = number[][];
+
+interface Piece {
+  shape: number[][];
+  x: number;
+  y: number;
+  type: ShapeType;
+}
+
+export default function TetrisGame() {
+  const [board, setBoard] = useState<Board>(() => 
+    Array(BOARD_HEIGHT).fill(null).map(() => Array(BOARD_WIDTH).fill(0))
+  );
+  const [currentPiece, setCurrentPiece] = useState<Piece | null>(null);
+  const [score, setScore] = useState(0);
+  const [gameOver, setGameOver] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [gameStarted, setGameStarted] = useState(false);
+
+  const createPiece = useCallback((): Piece => {
+    const types = Object.keys(SHAPES) as ShapeType[];
+    const type = types[Math.floor(Math.random() * types.length)];
+    return {
+      shape: SHAPES[type],
+      x: Math.floor(BOARD_WIDTH / 2) - 1,
+      y: 0,
+      type
+    };
   }, []);
 
+  const checkCollision = useCallback((piece: Piece, offsetX = 0, offsetY = 0): boolean => {
+    for (let y = 0; y < piece.shape.length; y++) {
+      for (let x = 0; x < piece.shape[y].length; x++) {
+        if (piece.shape[y][x]) {
+          const newX = piece.x + x + offsetX;
+          const newY = piece.y + y + offsetY;
+          
+          if (newX < 0 || newX >= BOARD_WIDTH || newY >= BOARD_HEIGHT) {
+            return true;
+          }
+          
+          if (newY >= 0 && board[newY][newX]) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }, [board]);
+
+  const mergePiece = useCallback((piece: Piece): Board => {
+    const newBoard = board.map(row => [...row]);
+    piece.shape.forEach((row, y) => {
+      row.forEach((value, x) => {
+        if (value) {
+          const boardY = piece.y + y;
+          const boardX = piece.x + x;
+          if (boardY >= 0 && boardY < BOARD_HEIGHT && boardX >= 0 && boardX < BOARD_WIDTH) {
+            newBoard[boardY][boardX] = 1;
+          }
+        }
+      });
+    });
+    return newBoard;
+  }, [board]);
+
+  const clearLines = useCallback((newBoard: Board): { board: Board; linesCleared: number } => {
+    let linesCleared = 0;
+    const clearedBoard = newBoard.filter(row => {
+      if (row.every(cell => cell === 1)) {
+        linesCleared++;
+        return false;
+      }
+      return true;
+    });
+    
+    while (clearedBoard.length < BOARD_HEIGHT) {
+      clearedBoard.unshift(Array(BOARD_WIDTH).fill(0));
+    }
+    
+    return { board: clearedBoard, linesCleared };
+  }, []);
+
+  const movePiece = useCallback((dx: number, dy: number) => {
+    if (!currentPiece || gameOver || isPaused) return;
+    
+    if (!checkCollision(currentPiece, dx, dy)) {
+      setCurrentPiece({ ...currentPiece, x: currentPiece.x + dx, y: currentPiece.y + dy });
+    } else if (dy > 0) {
+      const merged = mergePiece(currentPiece);
+      const { board: clearedBoard, linesCleared } = clearLines(merged);
+      setBoard(clearedBoard);
+      setScore(prev => prev + linesCleared * 100);
+      
+      const newPiece = createPiece();
+      if (checkCollision(newPiece)) {
+        setGameOver(true);
+      } else {
+        setCurrentPiece(newPiece);
+      }
+    }
+  }, [currentPiece, gameOver, isPaused, checkCollision, mergePiece, clearLines, createPiece]);
+
+  const rotatePiece = useCallback(() => {
+    if (!currentPiece || gameOver || isPaused) return;
+    
+    const rotated = currentPiece.shape[0].map((_, i) =>
+      currentPiece.shape.map(row => row[i]).reverse()
+    );
+    
+    const rotatedPiece = { ...currentPiece, shape: rotated };
+    if (!checkCollision(rotatedPiece)) {
+      setCurrentPiece(rotatedPiece);
+    }
+  }, [currentPiece, gameOver, isPaused, checkCollision]);
+
+  const dropPiece = useCallback(() => {
+    if (!currentPiece || gameOver || isPaused) return;
+    
+    let newY = currentPiece.y;
+    while (!checkCollision(currentPiece, 0, newY - currentPiece.y + 1)) {
+      newY++;
+    }
+    
+    const droppedPiece = { ...currentPiece, y: newY };
+    const merged = mergePiece(droppedPiece);
+    const { board: clearedBoard, linesCleared } = clearLines(merged);
+    setBoard(clearedBoard);
+    setScore(prev => prev + linesCleared * 100 + 10);
+    
+    const newPiece = createPiece();
+    if (checkCollision(newPiece)) {
+      setGameOver(true);
+    } else {
+      setCurrentPiece(newPiece);
+    }
+  }, [currentPiece, gameOver, isPaused, checkCollision, mergePiece, clearLines, createPiece]);
+
+  const startGame = useCallback(() => {
+    setBoard(Array(BOARD_HEIGHT).fill(null).map(() => Array(BOARD_WIDTH).fill(0)));
+    setCurrentPiece(createPiece());
+    setScore(0);
+    setGameOver(false);
+    setIsPaused(false);
+    setGameStarted(true);
+  }, [createPiece]);
+
+  useEffect(() => {
+    const handleKeyPress = (e: KeyboardEvent) => {
+      if (!gameStarted) return;
+      
+      switch (e.key) {
+        case 'ArrowLeft':
+          e.preventDefault();
+          movePiece(-1, 0);
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          movePiece(1, 0);
+          break;
+        case 'ArrowDown':
+          e.preventDefault();
+          movePiece(0, 1);
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          rotatePiece();
+          break;
+        case ' ':
+          e.preventDefault();
+          dropPiece();
+          break;
+        case 'p':
+        case 'P':
+          e.preventDefault();
+          setIsPaused(prev => !prev);
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [gameStarted, movePiece, rotatePiece, dropPiece]);
+
+  useEffect(() => {
+    if (!gameStarted || gameOver || isPaused || !currentPiece) return;
+    
+    const interval = setInterval(() => {
+      movePiece(0, 1);
+    }, 500);
+    
+    return () => clearInterval(interval);
+  }, [gameStarted, gameOver, isPaused, currentPiece, movePiece]);
+
+  const renderBoard = () => {
+    const displayBoard = board.map(row => [...row]);
+    
+    if (currentPiece) {
+      currentPiece.shape.forEach((row, y) => {
+        row.forEach((value, x) => {
+          if (value) {
+            const boardY = currentPiece.y + y;
+            const boardX = currentPiece.x + x;
+            if (boardY >= 0 && boardY < BOARD_HEIGHT && boardX >= 0 && boardX < BOARD_WIDTH) {
+              displayBoard[boardY][boardX] = 2;
+            }
+          }
+        });
+      });
+    }
+    
+    return displayBoard;
+  };
+
   return (
-    <div className="relative h-[100dvh] w-full overflow-hidden bg-black text-white">
-      {/* Enhanced animated aurora background layers */}
-      <div className="absolute inset-0 bg-aurora-layer-1" />
-      <div className="absolute inset-0 bg-aurora-layer-2" />
-      <div className="absolute inset-0 bg-aurora-layer-3" />
-      
-      {/* Floating particles overlay */}
-      <div className="absolute inset-0 bg-particles" />
-      
-      {/* Main content - centered */}
-      <main className="relative z-10 h-full flex flex-col items-center justify-center px-6">
-        <h1 className="text-center text-[clamp(28px,6vw,64px)] font-medium tracking-tight mb-4">
-          Turn Chats into Apps
+    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center p-4">
+      <div className="max-w-4xl w-full">
+        <h1 className="text-5xl font-bold text-white text-center mb-8 drop-shadow-lg">
+          Tetris
         </h1>
         
-        {/* Rotating slogans */}
-        <div className="mt-4 h-8 md:h-10 overflow-hidden flex items-center justify-center">
-          <span
-            className={`inline-block text-center text-[clamp(18px,3vw,32px)] font-light transition-all duration-[400ms] ease-in-out ${
-              isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2'
-            }`}
-          >
-            {slogans[currentIndex]}
-          </span>
-        </div>
-      </main>
-      
-      {/* Start Prompting arrow pointing left - bottom left */}
-      <div className="absolute left-6 md:left-8 bottom-[5%] z-20 flex items-center gap-3 arrow-point-left">
-        <div className="flex items-center gap-2 text-white/80 font-medium text-sm md:text-base">
-          <svg 
-            className="w-5 h-5 md:w-6 md:h-6 animate-bounce-horizontal" 
-            fill="none" 
-            viewBox="0 0 24 24" 
-            stroke="currentColor"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-          <span>Start prompting</span>
+        <div className="flex flex-col md:flex-row gap-8 items-center justify-center">
+          {/* Game Board */}
+          <div className="relative">
+            <div 
+              className="grid gap-[1px] bg-gray-800 p-2 rounded-lg shadow-2xl"
+              style={{
+                gridTemplateColumns: `repeat(${BOARD_WIDTH}, 1fr)`,
+                width: 'min(400px, 90vw)',
+                aspectRatio: `${BOARD_WIDTH} / ${BOARD_HEIGHT}`
+              }}
+            >
+              {renderBoard().map((row, y) =>
+                row.map((cell, x) => (
+                  <div
+                    key={`${y}-${x}`}
+                    className="aspect-square rounded-sm transition-colors"
+                    style={{
+                      backgroundColor: cell === 2 && currentPiece
+                        ? COLORS[currentPiece.type]
+                        : cell === 1
+                        ? '#4a5568'
+                        : '#1a202c'
+                    }}
+                  />
+                ))
+              )}
+            </div>
+            
+            {(gameOver || !gameStarted || isPaused) && (
+              <div className="absolute inset-0 bg-black/70 flex items-center justify-center rounded-lg">
+                <div className="text-center">
+                  {gameOver && (
+                    <>
+                      <h2 className="text-4xl font-bold text-white mb-4">Game Over!</h2>
+                      <p className="text-2xl text-white mb-6">Score: {score}</p>
+                    </>
+                  )}
+                  {isPaused && !gameOver && (
+                    <h2 className="text-4xl font-bold text-white mb-4">Paused</h2>
+                  )}
+                  {!gameStarted && (
+                    <h2 className="text-3xl font-bold text-white mb-4">Press Start to Play</h2>
+                  )}
+                  <button
+                    onClick={startGame}
+                    className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition-colors"
+                  >
+                    {gameOver ? 'Play Again' : 'Start Game'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+          
+          {/* Controls & Info */}
+          <div className="text-white space-y-6">
+            <div className="bg-white/10 backdrop-blur-sm rounded-lg p-6">
+              <h3 className="text-2xl font-bold mb-2">Score</h3>
+              <p className="text-4xl font-bold text-yellow-400">{score}</p>
+            </div>
+            
+            <div className="bg-white/10 backdrop-blur-sm rounded-lg p-6">
+              <h3 className="text-xl font-bold mb-4">Controls</h3>
+              <div className="space-y-2 text-sm">
+                <p><span className="font-bold">←/→</span> Move</p>
+                <p><span className="font-bold">↑</span> Rotate</p>
+                <p><span className="font-bold">↓</span> Soft Drop</p>
+                <p><span className="font-bold">Space</span> Hard Drop</p>
+                <p><span className="font-bold">P</span> Pause</p>
+              </div>
+            </div>
+            
+            {gameStarted && !gameOver && (
+              <button
+                onClick={() => setIsPaused(prev => !prev)}
+                className="w-full px-6 py-3 bg-yellow-600 hover:bg-yellow-700 text-white font-bold rounded-lg transition-colors"
+              >
+                {isPaused ? 'Resume' : 'Pause'}
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>
   );
 }
+
